@@ -15,6 +15,8 @@ including the evidence (errors, test results, benchmark numbers) that drove them
 | [0008](0008-hybrid-retrieval-business-glossary.md) | A versioned business glossary, retrieved with hybrid (term + vector) search |
 | [0009](0009-examples-and-refusals.md) | Near-duplicate examples only; refusals after fixable errors are pushed back |
 | [0010](0010-v5-tools-complement-context.md) | V5: tools complement context; the harness verifies; V4 stays the default |
+| [0011](0011-opentelemetry-and-audit-log.md) | OpenTelemetry for the pipeline; an audit log in the agent's own database |
+| [0012](0012-container-and-edge-limits.md) | A chiseled container for the API; limits for running behind a proxy |
 
 Stack choices inherited from the AI Engineering Foundry plan (ASP.NET Core, SQL Server rather than Postgres,
 self-hosted VPS deployment) are recorded there, not repeated here.

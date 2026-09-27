@@ -256,6 +256,7 @@ function renderMetrics(dl, r) {
     r.estimate ? ["est. cost", String(r.estimate.cost)] : null,
     tokensIn ? ["tokens", `${tokensIn.toLocaleString("en-US")} in / ${tokensOut.toLocaleString("en-US")} out`] : null,
     ["model id", r.model],
+    r.traceId ? ["trace id", r.traceId] : null,
   ];
   for (const item of items.filter(Boolean)) dl.append(el("div", {}, el("dt", { text: item[0] }), el("dd", { text: item[1] })));
 }

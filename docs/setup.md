@@ -38,7 +38,7 @@ $env:SQLCMDPASSWORD = "<password>"                          # SQL authentication
 ./database/setup.ps1 -Server "localhost,1433" -SqlAuth -User sa
 ```
 
-This **drops and recreates `FoundryTrade`** (no other database is touched) and runs, in order:
+This **drops and recreates `FoundryTrade`** and runs, in order:
 
 | Script | What it does |
 |---|---|
@@ -46,6 +46,7 @@ This **drops and recreates `FoundryTrade`** (no other database is touched) and r
 | `02-schema.sql` | Schemas `catalog`, `sales`, `inventory`, `hr`; tables, keys, CHECK constraints; an `MS_Description` on every table and column. |
 | `03-seed.sql` | Deterministic data: 52 employees, 150 products, 600 customers, 6,000 orders, 16,877 order lines, 5,831 payments, orders 2023-01-01 → 2026-08-31. Re-running produces identical rows. |
 | `04-security.sql` | The `hr.EmployeeDirectory` view (no salaries), role `agent_readers`, and the login-less user `agent_reader`. |
+| `ops/agent-ops.sql` | Creates the **AgentOps** database and its `audit.QueryLog` table **if they don't exist** — never dropped, so the audit history survives a FoundryTrade rebuild. |
 
 Sanity-check it at any time (read-only):
 
@@ -103,7 +104,7 @@ with environment variables, e.g. `SqlServer__ConnectionString`, `Llm__Model`, `A
 | `SqlServer:ConnectionString` | set in `appsettings.Development.json` | The API's own identity. Needs `CONNECT`, `VIEW DEFINITION` and `IMPERSONATE` on the agent user — nothing else. |
 | `SqlServer:AgentUser` | `agent_reader` | The database user every generated query runs as. |
 | `SqlServer:SchemaCacheMinutes` | `10` | How long discovered schema is reused. |
-| `Llm:Endpoint` / `Llm:Model` | `http://localhost:11434` / `qwen2.5-coder:7b` | Ollama server and model. |
+| `Llm:Endpoint` / `Llm:Model` | `http://127.0.0.1:11434` / `qwen2.5-coder:7b` | Ollama server and model. Use `127.0.0.1`, not `localhost`: on Windows `localhost` tries IPv6 first and each new connection waited ~2 s. |
 | `Llm:ContextWindow` | `8192` | Sent as Ollama `num_ctx` (Ollama's default of 2048 is too small for the V2 prompt). |
 | `Agent:DefaultVersion` | `V4` | Version used when a request doesn't name one. |
 | `Agent:MaxRows` / `QueryTimeoutSeconds` | `500` / `15` | Hard limits on every query. |
@@ -116,12 +117,17 @@ with environment variables, e.g. `SqlServer__ConnectionString`, `Llm__Model`, `A
 | `Agent:DomainNotes` | FoundryTrade facts | Facts the schema can't express (data period, currency, revenue rule). |
 | `Agent:Examples` | 3 examples | Few-shot question / explanation / SQL. Keep out of the benchmark. |
 | `Knowledge:File` | `knowledge/foundrytrade.json` | V4 knowledge base (copied next to the API and benchmark binaries). |
-| `Knowledge:QdrantHost` / `QdrantGrpcPort` / `Collection` | `localhost` / `6334` / `foundrytrade_knowledge` | Qdrant (gRPC). |
+| `Knowledge:QdrantHost` / `QdrantGrpcPort` / `Collection` | `127.0.0.1` / `6334` / `foundrytrade_knowledge` | Qdrant (gRPC). |
 | `Knowledge:EmbeddingModel` | `nomic-embed-text` | Ollama embedding model (with `search_document:`/`search_query:` prefixes). |
 | `Knowledge:DefinitionsTopK` / `MaxLexicalMatches` | `6` / `4` | Definitions per question, of which at most 4 by literal term match. |
 | `Knowledge:MinDefinitionScore` / `MinExampleScore` | `0.55` / `0.8` | Cosine thresholds; examples must be near-duplicates. |
 | `Knowledge:ExamplesTopK` | `2` | Retrieved worked examples per question. |
 | `RateLimit:AskPerMinute` | `20` (`120` in Development) | Per-client-IP limit on `/api/ask`. |
+| `RateLimit:AskConcurrency` / `AskQueue` | `4` / `16` | Questions answered at once, and waiting; beyond that `/api/ask` returns 429. |
+| `ReverseProxy:KnownProxies` | `[]` | Proxy addresses whose `X-Forwarded-For` is trusted (see [deployment.md](deployment.md)). Empty = not behind a proxy. |
+| `Audit:ConnectionString` | AgentOps in Development | Audit log (`AgentOps.audit.QueryLog`). Empty disables it. Needs only `INSERT` on the table. |
+| `Audit:QueueCapacity` | `1000` | Records waiting to be written; beyond that they are dropped (counted), never blocking answers. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | OTLP/gRPC endpoint for traces, metrics and logs, e.g. `http://127.0.0.1:4317` for the dashboard in docker-compose. Unset = no export. |
 
 No secrets are stored: development uses Windows authentication. For SQL authentication use
 `dotnet user-secrets` or an environment variable for the connection string.
@@ -137,6 +143,9 @@ CREATE USER agent_api FOR LOGIN agent_api;
 GRANT VIEW DEFINITION TO agent_api;                -- schema discovery (descriptions, keys, constraints)
 GRANT IMPERSONATE ON USER::agent_reader TO agent_api;
 ```
+
+For the audit log, in AgentOps: `CREATE USER agent_api FOR LOGIN agent_api; GRANT INSERT ON audit.QueryLog TO agent_api;`
+(full production setup: [deployment.md](deployment.md)).
 
 These grants were verified with a stand-in user: it can read all metadata and impersonate `agent_reader`,
 but cannot read any business data itself (error 229). View column lineage is read *as* `agent_reader`,
@@ -156,4 +165,6 @@ because describing a view needs SELECT on it.
 | `setup.ps1`: `'-': Unknown command` | An older copy of the script splatted a one-element array; use the current script (`[string[]] $auth`). |
 | First answer takes a minute | The model is loading; subsequent answers are fast. |
 | `/health` → `knowledge` Degraded / V4 returns 503 "knowledge base (Qdrant) is not reachable" | `docker compose up -d`; check nothing else holds ports 6333/6334 (`docker ps`). |
+| `/health` → `audit` Degraded | Run `database/ops/agent-ops.sql` (or `setup.ps1`), or check `Audit:ConnectionString` and the `INSERT` grant. Answers are unaffected. |
+| No traces in the dashboard | `docker compose --profile observability up -d`, and start the API with `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317`. |
 | Knowledge edits don't show up | The index updates at API start-up and before each benchmark run; restart the API after editing `knowledge/*.json`. |

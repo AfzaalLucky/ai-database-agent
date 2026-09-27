@@ -5,7 +5,7 @@
 ```
                 ┌──────────────────────────── AiDatabaseAgent.Api ─────────────────────────────┐
  browser ──────▶│ wwwroot UI   POST /api/ask  GET /api/prompt  GET /api/schema  GET /health    │
-                │ rate limit (per IP) · security headers/CSP · ProblemDetails                   │
+                │ rate + concurrency limits · forwarded headers · CSP · OpenTelemetry · audit    │
                 └───────────────┬───────────────────────────────────────────────────────────────┘
                                 │
                 ┌───────────────▼──────────── AiDatabaseAgent.Core (no I/O) ────────────────────┐
@@ -103,9 +103,21 @@ a SHA-256 of (row, salt), so data is identical on every build.
 
 ## Observability
 
-- Structured logs: one line per question (version, outcome, elapsed, attempts); a warning whenever generated
-  SQL is refused on security grounds; Microsoft.Extensions.AI request logging at `Warning` by default.
-- Every response carries per-attempt model time and token counts, query time and the cost estimate — shown in
-  the UI's trace and recorded by the benchmark.
-- `/health` checks the full database path (connect → impersonate → query → revert), that the model is pulled,
-  and that Qdrant holds the knowledge collection (`Degraded`, not `Unhealthy`, when it doesn't: V1–V3 still work).
+([ADR 0011](decisions/0011-opentelemetry-and-audit-log.md), operations guide: [deployment.md](deployment.md#4-watching-it))
+
+- **Traces** — `Core/Observability/AgentTelemetry` (BCL `ActivitySource`, no SDK in Core). One question is one
+  trace: `POST /api/ask` → `agent.ask` → `agent.retrieve` → a GenAI `chat` span per model call (from
+  Microsoft.Extensions.AI's `UseOpenTelemetry()`) → `agent.validate` → `db.estimate` → `db.execute`, plus the
+  HTTP calls to Ollama and Qdrant. Generated SQL is on the `db.*` spans; question text never is.
+- **Metrics** — questions by version and outcome, end-to-end and per-stage latency, attempts (repairs),
+  validator findings by kind, tokens, dropped audit records; plus ASP.NET Core, HttpClient and GenAI metrics.
+- **Export** — the API adds the OpenTelemetry SDK and exports traces, metrics and logs over OTLP when
+  `OTEL_EXPORTER_OTLP_ENDPOINT` is set (locally: the Aspire dashboard, docker-compose profile `observability`).
+- **Audit log** — every question (including infrastructure errors) is a row in `AgentOps.audit.QueryLog`, a
+  separate database from the one the agent queries, keyed by trace id. Written from a bounded queue by a
+  background service: a slow or missing audit database drops records, never answers.
+- **Per response** — per-attempt model time and tokens, query time, the cost estimate and the trace id, shown in
+  the UI's trace panel and recorded by the benchmark.
+- **`/health`** — the full database path (connect → impersonate → query → revert), models pulled, the Qdrant
+  collection populated, and the audit log writable (`Degraded`, not `Unhealthy`, for the last two: answers
+  don't depend on them).

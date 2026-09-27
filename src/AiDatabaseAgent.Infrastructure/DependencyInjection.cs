@@ -1,8 +1,10 @@
 using AiDatabaseAgent.Core.Agent;
 using AiDatabaseAgent.Core.Execution;
 using AiDatabaseAgent.Core.Knowledge;
+using AiDatabaseAgent.Core.Observability;
 using AiDatabaseAgent.Core.Schema;
 using AiDatabaseAgent.Infrastructure.Knowledge;
+using AiDatabaseAgent.Infrastructure.Observability;
 using AiDatabaseAgent.Infrastructure.SqlServer;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
@@ -20,7 +22,11 @@ public sealed class LlmOptions
     /// <summary>Only "Ollama" is wired up in this version; the agent itself depends on IChatClient, not on a provider.</summary>
     public string Provider { get; set; } = "Ollama";
 
-    public Uri Endpoint { get; set; } = new("http://localhost:11434");
+    /// <summary>
+    /// 127.0.0.1, not "localhost": on Windows "localhost" resolves to ::1 first, and Ollama listens on IPv4 only,
+    /// so every new connection waited ~2 s for the IPv6 attempt to fail (found in a trace; see ADR 0011).
+    /// </summary>
+    public Uri Endpoint { get; set; } = new("http://127.0.0.1:11434");
 
     public string Model { get; set; } = "qwen2.5-coder:7b";
 
@@ -62,6 +68,8 @@ public static class DependencyInjection
                 var contextWindow = sp.GetRequiredService<IOptions<LlmOptions>>().Value.ContextWindow;
                 return new ConfigureOptionsChatClient(inner, o => o.AddOllamaOption(OllamaOption.NumCtx, contextWindow));
             })
+            // gen_ai spans and token/duration metrics per model call (prompts and replies are not recorded).
+            .UseOpenTelemetry(sourceName: AgentTelemetry.SourceName)
             .UseLogging();
 
         // V4: business knowledge in Qdrant, embedded with an Ollama embedding model (keyed, so it is never
@@ -72,7 +80,11 @@ public static class DependencyInjection
             var llm = sp.GetRequiredService<IOptions<LlmOptions>>().Value;
             var knowledge = sp.GetRequiredService<IOptions<KnowledgeOptions>>().Value;
             var http = new HttpClient { BaseAddress = llm.Endpoint, Timeout = TimeSpan.FromSeconds(llm.TimeoutSeconds) };
-            return new OllamaApiClient(http, knowledge.EmbeddingModel);
+            IEmbeddingGenerator<string, Embedding<float>> ollama = new OllamaApiClient(http, knowledge.EmbeddingModel);
+            return ollama
+                .AsBuilder()
+                .UseOpenTelemetry(sourceName: AgentTelemetry.SourceName)
+                .Build(sp);
         });
         services.AddSingleton<QdrantKnowledgeStore>();
         services.AddSingleton<IKnowledgeRetriever>(sp => sp.GetRequiredService<QdrantKnowledgeStore>());
@@ -80,10 +92,17 @@ public static class DependencyInjection
 
         services.AddSingleton<TextToSqlAgent>();
 
+        // Audit log: every question, in the agent's own AgentOps database (off the request path).
+        services.AddOptions<AuditOptions>().Bind(configuration.GetSection(AuditOptions.SectionName));
+        services.AddSingleton<QueryAuditBuffer>();
+        services.AddSingleton<IQueryAuditLog>(sp => sp.GetRequiredService<QueryAuditBuffer>());
+        services.AddHostedService<QueryAuditWriter>();
+
         services.AddHealthChecks()
             .AddCheck<DatabaseHealthCheck>("database")
             .AddCheck<OllamaHealthCheck>("llm")
-            .AddCheck<KnowledgeHealthCheck>("knowledge");
+            .AddCheck<KnowledgeHealthCheck>("knowledge")
+            .AddCheck<AuditHealthCheck>("audit");
         return services;
     }
 }

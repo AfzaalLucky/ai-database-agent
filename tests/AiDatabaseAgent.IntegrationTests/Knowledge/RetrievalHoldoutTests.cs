@@ -37,7 +37,7 @@ public sealed class RetrievalHoldoutTests(ITestOutputHelper output) : IAsyncLife
     public Task InitializeAsync()
     {
         var options = Microsoft.Extensions.Options.Options.Create(new KnowledgeOptions { File = Repo.Find("knowledge/foundrytrade.json"), Collection = _collection });
-        var embedder = new OllamaApiClient(new HttpClient { BaseAddress = new Uri("http://localhost:11434"), Timeout = TimeSpan.FromMinutes(2) }, "nomic-embed-text");
+        var embedder = new OllamaApiClient(new HttpClient { BaseAddress = new Uri("http://127.0.0.1:11434"), Timeout = TimeSpan.FromMinutes(2) }, "nomic-embed-text");
         _store = new QdrantKnowledgeStore(options, embedder, NullLogger<QdrantKnowledgeStore>.Instance);
         return Task.CompletedTask;
     }

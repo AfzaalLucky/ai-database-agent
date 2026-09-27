@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using AiDatabaseAgent.Core.Execution;
 using AiDatabaseAgent.Core.Knowledge;
+using AiDatabaseAgent.Core.Observability;
 using AiDatabaseAgent.Core.Tools;
 using AiDatabaseAgent.Core.Prompting;
 using AiDatabaseAgent.Core.Schema;
@@ -43,6 +44,43 @@ public sealed partial class TextToSqlAgent(
             throw new ArgumentException($"Questions are limited to {_options.MaxQuestionLength} characters.", nameof(question));
 
         var v = version ?? _options.DefaultVersion;
+        using var activity = AgentTelemetry.Source.StartActivity("agent.ask");
+        activity?.SetTag(AgentTelemetry.Version, v.ToString());
+        var clock = Stopwatch.StartNew();
+        try
+        {
+            var result = await AskCoreAsync(question, v, cancellationToken);
+            RecordQuestion(activity, v, result.Outcome.ToString(), clock.Elapsed, result.Attempts.Count);
+            activity?.SetTag("gen_ai.request.model", result.Model);
+            activity?.SetTag("agent.attempts", result.Attempts.Count);
+            if (result.Result is { } rows)
+                activity?.SetTag("db.response.returned_rows", rows.Rows.Count);
+            if (result.Outcome is AskOutcome.Rejected or AskOutcome.Failed)
+                activity?.SetStatus(ActivityStatusCode.Error, result.Message);
+            return result;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Infrastructure failures (model, knowledge base or database unreachable) are not agent outcomes.
+            RecordQuestion(activity, v, "Error", clock.Elapsed, attempts: null);
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.AddException(ex);
+            throw;
+        }
+    }
+
+    private static void RecordQuestion(Activity? activity, AgentVersion version, string outcome, TimeSpan elapsed, int? attempts)
+    {
+        activity?.SetTag(AgentTelemetry.Outcome, outcome);
+        var tags = new TagList { AgentTelemetry.VersionTag(version), { AgentTelemetry.Outcome, outcome } };
+        AgentTelemetry.Questions.Add(1, tags);
+        AgentTelemetry.QuestionDuration.Record(elapsed.TotalSeconds, tags);
+        if (attempts is > 0)
+            AgentTelemetry.Attempts.Record(attempts.Value, AgentTelemetry.VersionTag(version));
+    }
+
+    private async Task<AskResult> AskCoreAsync(string question, AgentVersion v, CancellationToken cancellationToken)
+    {
         var defaultModel = chat.GetService<ChatClientMetadata>()?.DefaultModelId ?? "unknown";
         var run = new Run(question, v, Stopwatch.StartNew(), v == AgentVersion.V5 && _options.ToolModel is { } tm ? tm : defaultModel);
         var schema = await schemaProvider.GetSchemaAsync(cancellationToken);
@@ -87,6 +125,8 @@ public sealed partial class TextToSqlAgent(
             if (toolbox is not null)
                 messages.AddRange(response.Messages); // keep the tool calls and results in the conversation
             var modelElapsed = modelClock.Elapsed;
+            AgentTelemetry.RecordStage("model", v, modelElapsed);
+            RecordTokens(v, response.Usage);
             var parsed = ModelResponseParser.Parse(response.Text);
 
             // V5 self-check reply: "CONFIRMED" keeps the query that was just test-run.
@@ -147,7 +187,7 @@ public sealed partial class TextToSqlAgent(
             QueryCostEstimate? estimate = null;
             if (v >= AgentVersion.V3)
             {
-                var validation = SqlValidator.Validate(sql, schema);
+                var validation = Validate(sql, schema, v);
                 pushBack = FixablePush.From(validation);
                 if (!validation.IsValid)
                 {
@@ -165,7 +205,7 @@ public sealed partial class TextToSqlAgent(
 
                 try
                 {
-                    estimate = await executor.EstimateAsync(sql, cancellationToken);
+                    estimate = await EstimateAsync(sql, v, cancellationToken);
                 }
                 catch (QueryExecutionException ex)
                 {
@@ -203,7 +243,7 @@ public sealed partial class TextToSqlAgent(
 
             try
             {
-                var result = await executor.ExecuteAsync(sql, _options.Limits, cancellationToken);
+                var result = await ExecuteAsync(sql, v, cancellationToken);
                 Record(sql, []);
                 return Finish(run, AskOutcome.Answered, sql, result, null, estimate);
             }
@@ -233,7 +273,101 @@ public sealed partial class TextToSqlAgent(
             return null; // V1–V3 don't use the glossary; minimal V5 searches it itself through a tool
         if (knowledgeRetriever is null)
             throw new NotSupportedException("V4 needs the knowledge base, which is not configured.");
-        return await knowledgeRetriever.RetrieveAsync(question, cancellationToken);
+
+        using var activity = AgentTelemetry.Source.StartActivity("agent.retrieve");
+        var clock = Stopwatch.StartNew();
+        var knowledge = await knowledgeRetriever.RetrieveAsync(question, cancellationToken);
+        AgentTelemetry.RecordStage("retrieval", version, clock.Elapsed);
+        activity?.SetTag("agent.knowledge.definitions", knowledge.Definitions.Count);
+        activity?.SetTag("agent.knowledge.examples", knowledge.Examples.Count);
+        activity?.SetTag("agent.knowledge.ids", string.Join(",", knowledge.Definitions.Select(d => d.Entry.Id)));
+        return knowledge;
+    }
+
+    private static ValidationResult Validate(string sql, DatabaseSchema schema, AgentVersion version)
+    {
+        using var activity = AgentTelemetry.Source.StartActivity("agent.validate");
+        var clock = Stopwatch.StartNew();
+        var validation = SqlValidator.Validate(sql, schema);
+        AgentTelemetry.RecordStage("validation", version, clock.Elapsed);
+        activity?.SetTag("db.query.text", sql);
+        activity?.SetTag("agent.validation.valid", validation.IsValid);
+        if (!validation.IsValid)
+        {
+            activity?.SetTag("agent.validation.issues", string.Join(" | ", validation.Issues.Select(i => i.Message)));
+            foreach (var issue in validation.Issues)
+                AgentTelemetry.ValidationIssues.Add(1,
+                    new KeyValuePair<string, object?>("agent.issue.kind", issue.Kind.ToString()),
+                    new KeyValuePair<string, object?>("agent.security", validation.IsSecurityViolation));
+        }
+        return validation;
+    }
+
+    private async Task<QueryCostEstimate> EstimateAsync(string sql, AgentVersion version, CancellationToken cancellationToken)
+    {
+        using var activity = StartDbActivity("db.estimate", sql);
+        var clock = Stopwatch.StartNew();
+        try
+        {
+            var estimate = await executor.EstimateAsync(sql, cancellationToken);
+            activity?.SetTag("agent.estimate.cost", estimate.EstimatedCost);
+            activity?.SetTag("agent.estimate.rows", estimate.EstimatedRows);
+            return estimate;
+        }
+        catch (QueryExecutionException ex)
+        {
+            SetDbError(activity, ex);
+            throw;
+        }
+        finally
+        {
+            AgentTelemetry.RecordStage("estimate", version, clock.Elapsed);
+        }
+    }
+
+    private async Task<QueryResult> ExecuteAsync(string sql, AgentVersion version, CancellationToken cancellationToken)
+    {
+        using var activity = StartDbActivity("db.execute", sql);
+        var clock = Stopwatch.StartNew();
+        try
+        {
+            var result = await executor.ExecuteAsync(sql, _options.Limits, cancellationToken);
+            activity?.SetTag("db.response.returned_rows", result.Rows.Count);
+            activity?.SetTag("agent.result.truncated", result.Truncated);
+            return result;
+        }
+        catch (QueryExecutionException ex)
+        {
+            SetDbError(activity, ex);
+            throw;
+        }
+        finally
+        {
+            AgentTelemetry.RecordStage("execution", version, clock.Elapsed);
+        }
+    }
+
+    private static Activity? StartDbActivity(string name, string sql)
+    {
+        var activity = AgentTelemetry.Source.StartActivity(name, ActivityKind.Client);
+        activity?.SetTag("db.system.name", "microsoft.sql_server");
+        activity?.SetTag("db.query.text", sql);
+        return activity;
+    }
+
+    private static void SetDbError(Activity? activity, QueryExecutionException ex)
+    {
+        activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+        if (ex.ErrorNumber is { } number)
+            activity?.SetTag("db.response.status_code", number.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static void RecordTokens(AgentVersion version, UsageDetails? usage)
+    {
+        if (usage?.InputTokenCount is { } input)
+            AgentTelemetry.Tokens.Add(input, AgentTelemetry.VersionTag(version), new KeyValuePair<string, object?>("gen_ai.token.type", "input"));
+        if (usage?.OutputTokenCount is { } output)
+            AgentTelemetry.Tokens.Add(output, AgentTelemetry.VersionTag(version), new KeyValuePair<string, object?>("gen_ai.token.type", "output"));
     }
 
     private List<ChatMessage> BuildPrompt(AgentVersion version, DatabaseSchema schema, string question, KnowledgeContext? knowledge) => version switch

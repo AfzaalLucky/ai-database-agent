@@ -22,9 +22,11 @@ public sealed record AskResponse(
     IReadOnlyList<AttemptDto> Attempts,
     TimingsDto Timings,
     IReadOnlyList<KnowledgeDto> Knowledge,
-    IReadOnlyList<ToolCallDto> ToolCalls)
+    IReadOnlyList<ToolCallDto> ToolCalls,
+    string? TraceId)
 {
-    public static AskResponse From(AskResult r)
+    /// <param name="traceId">W3C trace id of the request: the key into the tracing backend and the audit log.</param>
+    public static AskResponse From(AskResult r, string? traceId = null)
     {
         ArgumentNullException.ThrowIfNull(r);
         return new AskResponse(
@@ -42,7 +44,8 @@ public sealed record AskResponse(
             r.Attempts.Select(a => new AttemptDto(a.Number, a.Sql, a.Issues, a.ModelResponse, (long)a.ModelElapsed.TotalMilliseconds, a.InputTokens, a.OutputTokens)).ToList(),
             new TimingsDto((long)r.Elapsed.TotalMilliseconds, r.Result is null ? null : (long)r.Result.Elapsed.TotalMilliseconds),
             r.Knowledge?.All.Select(h => new KnowledgeDto(h.Entry.Id, h.Entry.Kind, h.Entry.Title, Math.Round(h.Score, 3), h.MatchedTerm)).ToList() ?? [],
-            r.ToolCalls?.Select(t => new ToolCallDto(t.Number, t.Name, t.Arguments, t.Result, t.Succeeded, (long)t.Elapsed.TotalMilliseconds)).ToList() ?? []);
+            r.ToolCalls?.Select(t => new ToolCallDto(t.Number, t.Name, t.Arguments, t.Result, t.Succeeded, (long)t.Elapsed.TotalMilliseconds)).ToList() ?? [],
+            traceId);
     }
 }
 

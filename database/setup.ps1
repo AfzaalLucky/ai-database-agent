@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
   Creates (or recreates) the FoundryTrade sample database: schema, deterministic seed data and the
-  least-privilege agent_reader identity.
+  least-privilege agent_reader identity. Also creates the AgentOps database (audit log) if it
+  does not exist.
 
 .DESCRIPTION
   DESTRUCTIVE for the FoundryTrade database only — it is dropped and rebuilt. Requires sqlcmd
@@ -27,3 +28,10 @@ foreach ($script in $scripts) {
     if ($LASTEXITCODE -ne 0) { throw "$script failed (exit $LASTEXITCODE)" }
 }
 Write-Host "FoundryTrade is ready."
+
+# The agent's own operational database (audit log). Idempotent and never dropped: it keeps its history
+# when FoundryTrade is rebuilt.
+$ops = Join-Path $PSScriptRoot "ops/agent-ops.sql"
+Write-Host "==> ops/agent-ops.sql"
+& sqlcmd -S $Server @auth -C -b -i $ops
+if ($LASTEXITCODE -ne 0) { throw "ops/agent-ops.sql failed (exit $LASTEXITCODE)" }

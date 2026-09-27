@@ -17,7 +17,8 @@ public sealed class KnowledgeOptions
     /// <summary>Knowledge base file, relative to the application directory.</summary>
     public string File { get; set; } = "knowledge/foundrytrade.json";
 
-    public string QdrantHost { get; set; } = "localhost";
+    /// <summary>127.0.0.1 rather than "localhost", which costs ~2 s per new connection on Windows (IPv6 tried first).</summary>
+    public string QdrantHost { get; set; } = "127.0.0.1";
 
     /// <summary>Qdrant gRPC port (the .NET client uses gRPC; 6333 is REST).</summary>
     public int QdrantGrpcPort { get; set; } = 6334;

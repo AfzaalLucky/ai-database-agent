@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - run: dotnet restore
+      # Warnings are errors (Directory.Build.props), so this also enforces the analyzers and code style.
+      - run: dotnet build --configuration Release --no-restore
+      # Unit tests only: the integration suite needs SQL Server, Ollama and Qdrant (see docs/setup.md).
+      - run: dotnet test tests/AiDatabaseAgent.Core.Tests --configuration Release --no-build --logger "trx;LogFileName=unit.trx"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: test-results
+          path: "**/TestResults/*.trx"
+
+  container:
+    name: Container image
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          tags: ai-database-agent:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,6 +1,11 @@
-# Local services for the AI Database Agent (V4+). SQL Server and Ollama run on the host.
-#   docker compose up -d        start
-#   docker compose down         stop (data is kept in the named volume)
+# Local services for the AI Database Agent. SQL Server and Ollama run on the host.
+#   docker compose up -d                                  Qdrant only (V4+ knowledge base) — the default
+#   docker compose --profile observability up -d          + Aspire dashboard: traces, metrics, logs (http://localhost:18888)
+#   docker compose --profile app --profile observability up -d --build
+#                                                         + the API itself in a container (http://localhost:8080)
+#   docker compose down                                   stop (data is kept in the named volume)
+# The containerised API needs SQL Server logins (no Windows auth in a Linux container): set AGENT_SQL_CONNECTION
+# and optionally AGENT_AUDIT_CONNECTION in a .env file next to this one (see .env.example, docs/deployment.md).
 name: ai-database-agent
 
 services:
@@ -15,6 +20,38 @@ services:
       - qdrant-data:/qdrant/storage
     environment:
       QDRANT__TELEMETRY_DISABLED: "true"
+
+  dashboard:
+    profiles: ["observability"]
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:13.5.2
+    container_name: ai-database-agent-dashboard
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18888:18888" # dashboard UI
+      - "127.0.0.1:4317:18889"  # OTLP/gRPC in — for an API run on the host: OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
+    environment:
+      # Bound to localhost only. Never expose this port publicly without enabling its authentication.
+      ASPIRE_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+
+  api:
+    profiles: ["app"]
+    build: .
+    image: ai-database-agent:local
+    container_name: ai-database-agent-api
+    restart: unless-stopped
+    depends_on:
+      - qdrant
+    ports:
+      - "127.0.0.1:8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      SqlServer__ConnectionString: ${AGENT_SQL_CONNECTION:-} # required for this profile: the API refuses to start without it
+      Audit__ConnectionString: ${AGENT_AUDIT_CONNECTION:-}
+      Llm__Endpoint: ${OLLAMA_ENDPOINT:-http://host.docker.internal:11434}
+      Knowledge__QdrantHost: qdrant
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://dashboard:18889}
+      OTEL_SERVICE_NAME: ai-database-agent
 
 volumes:
   qdrant-data:

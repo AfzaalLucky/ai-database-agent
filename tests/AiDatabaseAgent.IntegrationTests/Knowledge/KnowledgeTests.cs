@@ -89,7 +89,7 @@ public sealed class QdrantKnowledgeStoreTests : IAsyncLifetime, IDisposable
         _file = Path.Combine(Path.GetTempPath(), $"{_collection}.json");
         File.Copy(Repo.Find("knowledge/foundrytrade.json"), _file);
         var options = Microsoft.Extensions.Options.Options.Create(new KnowledgeOptions { File = _file, Collection = _collection });
-        var embedder = new OllamaApiClient(new HttpClient { BaseAddress = new Uri("http://localhost:11434"), Timeout = TimeSpan.FromMinutes(2) }, "nomic-embed-text");
+        var embedder = new OllamaApiClient(new HttpClient { BaseAddress = new Uri("http://127.0.0.1:11434"), Timeout = TimeSpan.FromMinutes(2) }, "nomic-embed-text");
         _store = new QdrantKnowledgeStore(options, embedder, NullLogger<QdrantKnowledgeStore>.Instance);
         return Task.CompletedTask;
     }

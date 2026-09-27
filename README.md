@@ -5,7 +5,8 @@ built version by version, from a naïve Text-to-SQL prototype to a secured, self
 step measured.
 
 Part of **AI Engineering Foundry** (Phase 2 flagship project). Stack: .NET 10 · ASP.NET Core · SQL Server ·
-Microsoft.Extensions.AI · Ollama (`qwen2.5-coder:7b`, `qwen2.5:7b`, `nomic-embed-text`, local) · Qdrant · ScriptDom.
+Microsoft.Extensions.AI · Ollama (`qwen2.5-coder:7b`, `qwen2.5:7b`, `nomic-embed-text`, local) · Qdrant · ScriptDom ·
+OpenTelemetry · Docker.
 
 ```
 "Which 10 customers generated the most revenue in 2025?"
@@ -50,6 +51,20 @@ Model-generated SQL is untrusted input. Three independent layers:
 
 See [docs/architecture.md](docs/architecture.md) and the [decision records](docs/decisions/).
 
+## How it's operated
+
+- **Traces and metrics** (OpenTelemetry, OTLP): one question is one trace — retrieval, each model call with its
+  tokens, validation, cost estimate, execution. Metrics for outcomes, per-stage latency, repairs, validator
+  findings and tokens. Question text never goes on spans.
+- **Audit log**: every question is a row in a separate `AgentOps` database, keyed by trace id — the agent never
+  writes to the database it queries, and a failing audit database never costs an answer.
+- **Container**: chiseled, non-root .NET 10 image; forwarded headers, per-client and concurrency limits for
+  running behind Nginx; CI builds, tests and builds the image.
+
+On a 132-question workload the model was 96% of the time; the first trace found a 2-second IPv6 `localhost`
+penalty on every new connection to Ollama and Qdrant (fixed). [Part 6](docs/versions/v6-production.md) ·
+[deployment guide](docs/deployment.md).
+
 ## Quick start
 
 Requires the .NET 10 SDK, SQL Server (developed and tested on SQL Server 2025 Developer edition), `sqlcmd`,
@@ -60,15 +75,25 @@ ollama pull qwen2.5-coder:7b
 ollama pull nomic-embed-text                           # V4 embeddings
 ollama pull qwen2.5:7b                                 # V5 tool calling
 docker compose up -d                                   # Qdrant for V4 (V1–V3 work without it)
-./database/setup.ps1                                   # creates FoundryTrade (drops it if it exists)
+./database/setup.ps1                                   # FoundryTrade (dropped and rebuilt) + AgentOps (audit log, kept)
 dotnet run --project src/AiDatabaseAgent.Api          # http://localhost:5121
 ```
 
 Open http://localhost:5121, or `POST /api/ask` with `{ "question": "...", "version": "V4" }`.
 Full instructions, configuration and troubleshooting: [docs/setup.md](docs/setup.md).
 
+To see traces and metrics locally:
+
 ```powershell
-dotnet test                                            # 148 unit + integration tests (database, Ollama, Qdrant)
+docker compose --profile observability up -d          # Aspire dashboard: http://localhost:18888
+$env:OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
+dotnet run --project src/AiDatabaseAgent.Api
+```
+
+Container and production setup (SQL logins, Nginx, grants): [docs/deployment.md](docs/deployment.md).
+
+```powershell
+dotnet test                                            # 160 unit + integration tests (database, Ollama, Qdrant)
 dotnet run --project tools/AiDatabaseAgent.Eval        # benchmark V1–V5 on the development set
 dotnet run --project tools/AiDatabaseAgent.Eval -- --questions eval/questions-holdout.json
 ```
@@ -84,20 +109,24 @@ dotnet run --project tools/AiDatabaseAgent.Eval -- --questions eval/questions-ho
 | `tools/AiDatabaseAgent.Eval` | Benchmark runner. |
 | `eval/` | Development and held-out question sets with gold SQL, scoring rules, and result reports. |
 | `knowledge/` | V4 business glossary (definitions, not-tracked notes, verified examples) — versioned and tested like code. |
-| `docker-compose.yml` | The project's own Qdrant (pinned version, localhost-only ports). |
-| `database/` | FoundryTrade schema, deterministic seed, security script, verification queries, setup script. |
+| `docker-compose.yml` | Qdrant (default); profiles `observability` (Aspire dashboard) and `app` (the API container). Localhost-only ports. |
+| `Dockerfile`, `.github/workflows/` | Container image; CI (build, unit tests, image build). |
+| `database/` | FoundryTrade schema, deterministic seed, security script, verification queries, setup script; `ops/` — the AgentOps audit database and report queries. |
 | `docs/` | Setup, architecture, decision records, and one write-up per version. |
 
 ## Documentation
 
 - [Setup guide](docs/setup.md)
+- [Deployment and operations](docs/deployment.md)
 - [Architecture](docs/architecture.md)
 - Decision records: [docs/decisions](docs/decisions/)
-- Version write-ups: [V1](docs/versions/v1-text-to-sql.md) · [V2](docs/versions/v2-schema-aware.md) · [V3](docs/versions/v3-validated.md) · [V4](docs/versions/v4-knowledge.md) · [V5](docs/versions/v5-agent.md)
+- Version write-ups: [V1](docs/versions/v1-text-to-sql.md) · [V2](docs/versions/v2-schema-aware.md) · [V3](docs/versions/v3-validated.md) · [V4](docs/versions/v4-knowledge.md) · [V5](docs/versions/v5-agent.md) · [Part 6: observability and packaging](docs/versions/v6-production.md)
 - [Evaluation](eval/README.md)
 
 ## Roadmap
 
+- **Next:** deploy the container to the VPS as a read-only public demo — needs a SQL login on the server and a
+  decision on where the model runs (GPU host, smaller model, or a hosted one behind the same `IChatClient`).
 - **Next experiment:** the same benchmark with a stronger model (a larger local one, or a hosted one behind the
   same `IChatClient`) — V5's tools and checks should gain the most from it. Then retrieved definitions in the user
   turn for V4.

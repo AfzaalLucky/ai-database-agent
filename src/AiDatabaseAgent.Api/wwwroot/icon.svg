@@ -1,0 +1,17 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 64 64"
+  fill="none"
+>
+  <rect
+    width="64"
+    height="64"
+    rx="14"
+    fill="#ff6a2c"
+  />
+
+  <path
+    d="M17 47L27 17H37L47 47H39L37 40H27L25 47H17ZM29 33H35L32 23L29 33Z"
+    fill="white"
+  />
+</svg>

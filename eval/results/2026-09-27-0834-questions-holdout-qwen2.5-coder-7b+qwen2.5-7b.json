@@ -1,0 +1,134 @@
+[
+  {
+    "id": "h-margin-2025",
+    "category": "business-rule",
+    "version": "V5",
+    "verdict": "Correct",
+    "detail": "1 row(s)",
+    "sql": "SELECT \n    SUM(l.LineTotal) - SUM(l.Quantity * p.UnitCost) AS GrossProfit, \n    100.0 * (SUM(l.LineTotal) - SUM(l.Quantity * p.UnitCost)) / NULLIF(SUM(l.LineTotal), 0) AS GrossMarginPct \nFROM \n    sales.Orders o \nJOIN \n    sales.OrderLines l ON l.OrderId = o.OrderId \nJOIN \n    catalog.Products p ON p.ProductId = l.ProductId \nWHERE \n    o.Status NOT IN (\u0027Cancelled\u0027, \u0027Returned\u0027) \n    AND YEAR(o.OrderDate) = 2025",
+    "seconds": 15.32,
+    "attempts": 1,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-return-rate-warehouse",
+    "category": "ratios",
+    "version": "V5",
+    "verdict": "Failed",
+    "detail": "The request was canceled due to the configured HttpClient.Timeout of 180 seconds elapsing.",
+    "sql": null,
+    "seconds": 181.8,
+    "attempts": 0,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-active-customers",
+    "category": "business-rule",
+    "version": "V5",
+    "verdict": "WronglyDeclined",
+    "detail": "Not tracked: marketing and advertising data such as customer acquisition cost or return on ad spend is not available in the database. Therefore, we cannot determine the number of active customers based on the provided information",
+    "sql": null,
+    "seconds": 7.82,
+    "attempts": 1,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-revenue-q2-2026",
+    "category": "dates",
+    "version": "V5",
+    "verdict": "Correct",
+    "detail": "1 row(s)",
+    "sql": "SELECT SUM(CASE WHEN o.Status NOT IN (\u0027Cancelled\u0027, \u0027Returned\u0027) THEN l.LineTotal ELSE 0 END) AS Q2_2026_Revenue \nFROM sales.Orders o \nJOIN sales.OrderLines l ON l.OrderId = o.OrderId \nWHERE YEAR(o.OrderDate) = 2026 AND MONTH(o.OrderDate) BETWEEN 4 AND 6",
+    "seconds": 6.58,
+    "attempts": 1,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-yoy-july",
+    "category": "dates",
+    "version": "V5",
+    "verdict": "Correct",
+    "detail": "1 row(s)",
+    "sql": "SELECT \n    (471899.64 - 583094.25) * 100.0 / 583094.25 AS RevenueChangePct",
+    "seconds": 6.89,
+    "attempts": 1,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-inventory-list-value",
+    "category": "inventory",
+    "version": "V5",
+    "verdict": "Correct",
+    "detail": "1 row(s)",
+    "sql": "SELECT SUM(QuantityOnHand * ListPrice) AS TotalStockValue \nFROM inventory.Stock s \nJOIN catalog.Products p ON s.ProductId = p.ProductId",
+    "seconds": 3.52,
+    "attempts": 1,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-out-of-stock-products",
+    "category": "inventory",
+    "version": "V5",
+    "verdict": "Failed",
+    "detail": "Failed: The model did not return a SQL query.",
+    "sql": null,
+    "seconds": 8.42,
+    "attempts": 3,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-amount-outstanding",
+    "category": "payments",
+    "version": "V5",
+    "verdict": "SilentlyWrong",
+    "detail": "no column matches gold column 1 (e.g. 439664.38)",
+    "sql": "SELECT SUM(l.LineTotal \u002B o.ShippingFee) AS OutstandingAmount \nFROM sales.OrderLines l \nLEFT JOIN sales.Orders o ON l.OrderId = o.OrderId \nLEFT JOIN sales.Payments p ON o.OrderId = p.OrderId \nWHERE p.OrderId IS NULL AND o.Status NOT IN (\u0027Cancelled\u0027, \u0027Returned\u0027)",
+    "seconds": 8.99,
+    "attempts": 1,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-orders-ytd",
+    "category": "dates",
+    "version": "V5",
+    "verdict": "SilentlyWrong",
+    "detail": "no column matches gold column 1 (e.g. 1411)",
+    "sql": "SELECT COUNT(*) AS OrderCount \nFROM sales.Orders \nWHERE OrderDate \u003E= DATEFROMPARTS(YEAR(GETDATE()), 1, 1) \nAND OrderDate \u003C DATEFROMPARTS(YEAR(GETDATE()) \u002B 1, 1, 1) \nAND Status NOT IN (\u0027Cancelled\u0027, \u0027Returned\u0027)",
+    "seconds": 4.55,
+    "attempts": 1,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-fulfilment-hours",
+    "category": "aggregation",
+    "version": "V5",
+    "verdict": "SilentlyWrong",
+    "detail": "no column matches gold column 1 (e.g. 42.95071542)",
+    "sql": "SELECT AVG(DATEDIFF(hour, o.OrderDate, o.ShippedDate)) AS AvgOrderToShipTime \nFROM sales.Orders o \nWHERE o.ShippedDate IS NOT NULL AND o.Status NOT IN (\u0027Cancelled\u0027, \u0027Returned\u0027)",
+    "seconds": 5.63,
+    "attempts": 1,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-decline-advertising",
+    "category": "decline",
+    "version": "V5",
+    "verdict": "Correct",
+    "detail": "declined: Not tracked: marketing and advertising: There is no data on marketing spend, campaigns, advertising, promotions budgets, customer acquisition cost or return on ad spend. Questions about these cannot be answered",
+    "sql": null,
+    "seconds": 1.66,
+    "attempts": 1,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-decline-ratings",
+    "category": "decline",
+    "version": "V5",
+    "verdict": "Correct",
+    "detail": "declined: Not tracked: reviews, returns reasons, purchase history, cost history. There is no product rating data available in the database",
+    "sql": null,
+    "seconds": 1.36,
+    "attempts": 1,
+    "unsafeSqlExecuted": false
+  }
+]

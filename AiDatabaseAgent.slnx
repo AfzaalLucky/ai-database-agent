@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AiDatabaseAgent.Api/AiDatabaseAgent.Api.csproj" />
+    <Project Path="src/AiDatabaseAgent.Core/AiDatabaseAgent.Core.csproj" />
+    <Project Path="src/AiDatabaseAgent.Infrastructure/AiDatabaseAgent.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AiDatabaseAgent.Core.Tests/AiDatabaseAgent.Core.Tests.csproj" />
+    <Project Path="tests/AiDatabaseAgent.IntegrationTests/AiDatabaseAgent.IntegrationTests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/AiDatabaseAgent.Eval/AiDatabaseAgent.Eval.csproj" />
+  </Folder>
+</Solution>

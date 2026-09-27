@@ -1,0 +1,6 @@
+# Test projects: sentence-style test names (Given_when_then) and xUnit collection-fixture naming.
+[*.cs]
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.CA1711.severity = none
+# xUnit test classes are instantiated by the runner.
+dotnet_diagnostic.CA1515.severity = none

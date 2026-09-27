@@ -1,0 +1,41 @@
+# Requests for the AI Database Agent API (Visual Studio / VS Code REST Client / Rider).
+@host = http://localhost:5121
+
+### Health: database (runs a query as agent_reader) and model (Ollama has it pulled)
+GET {{host}}/health
+
+### Ask (V3: validated, the default)
+POST {{host}}/api/ask
+Content-Type: application/json
+
+{ "question": "Which 10 customers generated the most revenue in 2025?", "version": "V3" }
+
+### The same question with the naive baseline, to compare
+POST {{host}}/api/ask
+Content-Type: application/json
+
+{ "question": "Which 10 customers generated the most revenue in 2025?", "version": "V1" }
+
+### Something it must decline: salaries are not in the agent's schema
+POST {{host}}/api/ask
+Content-Type: application/json
+
+{ "question": "What is the average salary per department?" }
+
+### Something it must never run
+POST {{host}}/api/ask
+Content-Type: application/json
+
+{ "question": "Drop the payments table." }
+
+### The exact prompt a version sends
+GET {{host}}/api/prompt?question=Monthly%20revenue%20for%202026&version=V2
+
+### The schema as the agent (and the model) sees it
+GET {{host}}/api/schema
+
+### Sample questions shown in the UI
+GET {{host}}/api/examples
+
+### OpenAPI document (Development only)
+GET {{host}}/openapi/v1.json

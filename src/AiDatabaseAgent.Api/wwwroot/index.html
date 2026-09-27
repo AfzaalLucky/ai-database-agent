@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>AI Database Agent — AI Engineering Foundry</title>
+  <meta name="description" content="Ask the FoundryTrade sample database a question in plain English and see the SQL, the validation and the result.">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="preload" href="fonts/ibm-plex-sans.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="app.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="AI Database Agent home">
+      <img src="icon.svg" alt="" width="28" height="28">
+      <span class="brand-name">AI Engineering Foundry</span>
+      <span class="brand-sep" aria-hidden="true">/</span>
+      <span class="brand-project">AI Database Agent</span>
+    </a>
+    <div class="status" id="status" aria-live="polite">
+      <span class="status-item" id="status-database"><span class="dot"></span>database</span>
+      <span class="status-item" id="status-llm"><span class="dot"></span>model</span>
+    </div>
+  </header>
+
+  <main class="page">
+    <section class="intro">
+      <p class="eyebrow">Flagship project · FoundryTrade sandbox</p>
+      <h1>Ask the database</h1>
+      <p class="lede">
+        Plain-English questions over a sample trading company's sales, catalogue, inventory and staff data.
+        Every answer shows the SQL the model wrote, how it was checked, and what the database returned.
+        Queries run read-only as a least-privilege database user.
+      </p>
+    </section>
+
+    <form class="ask" id="ask-form" autocomplete="off">
+      <label class="label" for="question">Your question</label>
+      <div class="ask-row">
+        <textarea id="question" name="question" rows="2" maxlength="500" required
+          placeholder="e.g. Which 10 customers spent the most in 2025?"></textarea>
+        <button type="submit" class="btn-primary" id="ask-button">Ask</button>
+      </div>
+      <div class="ask-meta">
+        <fieldset class="versions" id="versions">
+          <legend class="label">Agent version</legend>
+          <label><input type="radio" name="version" value="V1"><span title="Table and column names only; SQL runs as returned">V1 · Text-to-SQL</span></label>
+          <label><input type="radio" name="version" value="V2"><span title="Types, keys, join paths, descriptions, rules and examples; may decline">V2 · Schema-aware</span></label>
+          <label><input type="radio" name="version" value="V3" checked><span title="V2 plus a SQL allow-list validator, cost check and repair loop">V3 · Validated</span></label>
+          <label><input type="radio" name="version" value="V4"><span title="V3 plus business definitions and verified examples retrieved per question">V4 · Knowledge</span></label>
+          <label><input type="radio" name="version" value="V5"><span title="The model explores with tools (describe tables, search the glossary, sample values, test queries), then V3's checks">V5 · Agent</span></label>
+          <label><input type="radio" name="version" value="compare"><span title="Run the question through V1 to V5">Compare all</span></label>
+        </fieldset>
+        <span class="hint"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> to ask</span>
+      </div>
+      <div class="samples" id="samples" aria-label="Sample questions"></div>
+    </form>
+
+    <section id="output" class="output" aria-live="polite"></section>
+
+    <details class="schema" id="schema">
+      <summary><span class="eyebrow">What the agent can see</span> <span class="schema-count" id="schema-count"></span></summary>
+      <p class="muted small">
+        Discovered from the database as the agent's own restricted user — tables and columns it may not read
+        (like salaries) never reach the model. Arrows are join paths from foreign keys.
+      </p>
+      <div class="schema-grid" id="schema-grid"></div>
+    </details>
+  </main>
+
+  <footer class="footer">
+    <span>AI Engineering Foundry · Build. Engineer. Ship AI.</span>
+    <span class="muted" id="model-name"></span>
+  </footer>
+
+  <template id="tpl-result">
+    <article class="result">
+      <header class="result-head">
+        <span class="badge" data-field="outcome"></span>
+        <span class="pill" data-field="version"></span>
+        <p class="result-question" data-field="question"></p>
+      </header>
+      <p class="explanation" data-field="explanation"></p>
+      <p class="message" data-field="message"></p>
+      <div class="sql-block" data-field="sql-block">
+        <div class="sql-bar">
+          <span class="label">SQL</span>
+          <button type="button" class="btn-ghost" data-action="copy-sql">Copy</button>
+        </div>
+        <pre class="sql"><code data-field="sql"></code></pre>
+      </div>
+      <div class="table-block" data-field="table-block">
+        <div class="table-bar">
+          <span class="label" data-field="rowcount"></span>
+          <button type="button" class="btn-ghost" data-action="csv">Download CSV</button>
+        </div>
+        <div class="table-scroll"><table data-field="table"></table></div>
+      </div>
+      <details class="tools" data-field="tools-block">
+        <summary class="label" data-field="tools-summary"></summary>
+        <ol data-field="tools"></ol>
+      </details>
+      <details class="knowledge" data-field="knowledge-block">
+        <summary class="label" data-field="knowledge-summary"></summary>
+        <ul data-field="knowledge"></ul>
+      </details>
+      <dl class="metrics" data-field="metrics"></dl>
+      <details class="attempts" data-field="attempts-block">
+        <summary class="label" data-field="attempts-summary"></summary>
+        <ol data-field="attempts"></ol>
+      </details>
+    </article>
+  </template>
+</body>
+</html>

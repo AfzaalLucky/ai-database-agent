@@ -1,0 +1,21 @@
+# Local services for the AI Database Agent (V4+). SQL Server and Ollama run on the host.
+#   docker compose up -d        start
+#   docker compose down         stop (data is kept in the named volume)
+name: ai-database-agent
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.18.3
+    container_name: ai-database-agent-qdrant
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333" # REST + dashboard (http://localhost:6333/dashboard)
+      - "127.0.0.1:6334:6334" # gRPC (used by the .NET client)
+    volumes:
+      - qdrant-data:/qdrant/storage
+    environment:
+      QDRANT__TELEMETRY_DISABLED: "true"
+
+volumes:
+  qdrant-data:
+    name: ai-database-agent-qdrant-data

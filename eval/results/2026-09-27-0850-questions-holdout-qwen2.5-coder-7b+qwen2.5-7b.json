@@ -1,0 +1,134 @@
+[
+  {
+    "id": "h-margin-2025",
+    "category": "business-rule",
+    "version": "V5",
+    "verdict": "Correct",
+    "detail": "1 row(s)",
+    "sql": "SELECT \n    100.0 * \n    (SUM(l.LineTotal) - SUM(l.Quantity * p.UnitCost)) / \n    NULLIF(SUM(l.LineTotal), 0) AS GrossMarginPct\nFROM \n    sales.Orders AS o\nJOIN \n    sales.OrderLines AS l ON l.OrderId = o.OrderId\nJOIN \n    catalog.Products AS p ON p.ProductId = l.ProductId\nWHERE \n    o.Status NOT IN (\u0027Cancelled\u0027, \u0027Returned\u0027)\n    AND YEAR(o.OrderDate) = 2025",
+    "seconds": 9.67,
+    "attempts": 1,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-return-rate-warehouse",
+    "category": "ratios",
+    "version": "V5",
+    "verdict": "Correct",
+    "detail": "4 row(s)",
+    "sql": "SELECT w.Name AS WarehouseName, \n       CAST(SUM(CASE WHEN o.Status = \u0027Returned\u0027 THEN 1 ELSE 0 END) * 100.0 / COUNT(o.OrderId) AS decimal(5, 2)) AS ReturnRate\nFROM inventory.Warehouses AS w\nJOIN sales.Orders AS o ON o.WarehouseId = w.WarehouseId\nWHERE o.Status IN (\u0027Shipped\u0027, \u0027Delivered\u0027, \u0027Returned\u0027)\nGROUP BY w.Name",
+    "seconds": 2.7,
+    "attempts": 1,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-active-customers",
+    "category": "business-rule",
+    "version": "V5",
+    "verdict": "SilentlyWrong",
+    "detail": "no column matches gold column 1 (e.g. 555)",
+    "sql": "SELECT COUNT(*) AS ActiveCustomers\nFROM sales.Customers AS c\nWHERE EXISTS (\n    SELECT 1\n    FROM sales.Orders AS o\n    WHERE o.CustomerId = c.CustomerId\n      AND o.Status NOT IN (\u0027Cancelled\u0027, \u0027Returned\u0027)\n      AND o.OrderDate \u003E= DATEADD(YEAR, -1, GETDATE())\n)",
+    "seconds": 1.92,
+    "attempts": 1,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-revenue-q2-2026",
+    "category": "dates",
+    "version": "V5",
+    "verdict": "Correct",
+    "detail": "1 row(s)",
+    "sql": "SELECT CAST(SUM(l.LineTotal) AS decimal(14, 2)) AS Revenue\nFROM sales.Orders AS o\nJOIN sales.OrderLines AS l ON l.OrderId = o.OrderId\nWHERE o.Status NOT IN (\u0027Cancelled\u0027, \u0027Returned\u0027)\n  AND o.OrderDate \u003E= \u00272026-04-01\u0027 AND o.OrderDate \u003C \u00272026-07-01\u0027",
+    "seconds": 2.52,
+    "attempts": 1,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-yoy-july",
+    "category": "dates",
+    "version": "V5",
+    "verdict": "Correct",
+    "detail": "1 row(s)",
+    "sql": "WITH July2025Revenue AS (\n    SELECT SUM(l.LineTotal) AS Revenue\n    FROM sales.Orders AS o\n    JOIN sales.OrderLines AS l ON l.OrderId = o.OrderId\n    WHERE o.Status NOT IN (\u0027Cancelled\u0027, \u0027Returned\u0027)\n      AND o.OrderDate \u003E= \u00272025-07-01\u0027 AND o.OrderDate \u003C \u00272025-08-01\u0027\n),\nJuly2026Revenue AS (\n    SELECT SUM(l.LineTotal) AS Revenue\n    FROM sales.Orders AS o\n    JOIN sales.OrderLines AS l ON l.OrderId = o.OrderId\n    WHERE o.Status NOT IN (\u0027Cancelled\u0027, \u0027Returned\u0027)\n      AND o.OrderDate \u003E= \u00272026-07-01\u0027 AND o.OrderDate \u003C \u00272026-08-01\u0027\n)\nSELECT \n    100.0 * (July2026Revenue.Revenue - July2025Revenue.Revenue) / July2025Revenue.Revenue AS RevenueGrowthPct\nFROM July2025Revenue, July2026Revenue",
+    "seconds": 5.04,
+    "attempts": 1,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-inventory-list-value",
+    "category": "inventory",
+    "version": "V5",
+    "verdict": "Correct",
+    "detail": "1 row(s)",
+    "sql": "SELECT SUM(s.QuantityOnHand * p.ListPrice) AS TotalStockValue\nFROM inventory.Stock AS s\nJOIN catalog.Products AS p ON p.ProductId = s.ProductId",
+    "seconds": 1.54,
+    "attempts": 1,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-out-of-stock-products",
+    "category": "inventory",
+    "version": "V5",
+    "verdict": "Correct",
+    "detail": "1 row(s)",
+    "sql": "SELECT COUNT(DISTINCT p.ProductId) AS OutOfStockProducts\nFROM inventory.Stock AS s\nJOIN catalog.Products AS p ON p.ProductId = s.ProductId\nWHERE s.QuantityOnHand = 0 AND p.IsDiscontinued = 0",
+    "seconds": 1.92,
+    "attempts": 1,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-amount-outstanding",
+    "category": "payments",
+    "version": "V5",
+    "verdict": "SilentlyWrong",
+    "detail": "no column matches gold column 1 (e.g. 439664.38)",
+    "sql": "SELECT SUM(l.LineTotal \u002B o.ShippingFee) AS OutstandingAmount\nFROM sales.OrderLines AS l\nJOIN sales.Orders AS o ON l.OrderId = o.OrderId\nWHERE o.Status NOT IN (\u0027Cancelled\u0027, \u0027Returned\u0027)\n  AND l.OrderId NOT IN (SELECT OrderId FROM sales.Payments WHERE IsRefund = 0)",
+    "seconds": 4.08,
+    "attempts": 3,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-orders-ytd",
+    "category": "dates",
+    "version": "V5",
+    "verdict": "Correct",
+    "detail": "1 row(s)",
+    "sql": "SELECT COUNT(*) AS OrdersPlaced\nFROM sales.Orders\nWHERE OrderDate \u003E= DATEFROMPARTS(YEAR(GETDATE()), 1, 1) AND OrderDate \u003C DATEFROMPARTS(YEAR(GETDATE()) \u002B 1, 1, 1)",
+    "seconds": 1.85,
+    "attempts": 1,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-fulfilment-hours",
+    "category": "aggregation",
+    "version": "V5",
+    "verdict": "SilentlyWrong",
+    "detail": "expected 1 row(s), got 5",
+    "sql": "SELECT TOP (5) p.Sku, p.Name, SUM(s.QuantityOnHand) AS UnitsOnHand\nFROM catalog.Products AS p\nJOIN inventory.Stock AS s ON s.ProductId = p.ProductId\nWHERE p.IsDiscontinued = 0\nGROUP BY p.Sku, p.Name\nORDER BY UnitsOnHand ASC",
+    "seconds": 4.52,
+    "attempts": 3,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-decline-advertising",
+    "category": "decline",
+    "version": "V5",
+    "verdict": "Correct",
+    "detail": "declined: Data on marketing spend, campaigns, advertising, promotions budgets, customer acquisition cost or return on ad spend is not tracked",
+    "sql": null,
+    "seconds": 1.8,
+    "attempts": 2,
+    "unsafeSqlExecuted": false
+  },
+  {
+    "id": "h-decline-ratings",
+    "category": "decline",
+    "version": "V5",
+    "verdict": "Correct",
+    "detail": "declined: Customer ratings are not tracked",
+    "sql": null,
+    "seconds": 0.87,
+    "attempts": 1,
+    "unsafeSqlExecuted": false
+  }
+]

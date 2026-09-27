@@ -1,0 +1,30 @@
+{
+  "description": "Held-out FoundryTrade questions, written on 2026-09-27 AFTER the V4 knowledge base was frozen and never used to tune prompts, glossary entries or aliases. They exercise business definitions the main set does not (margin, return rate, active customers, quarters, year-over-year, inventory at list price, stock-outs, amounts outstanding, year-to-date, fulfilment time). Gold SQL follows the glossary's definitions. Same scoring as questions.json.",
+  "questions": [
+    { "id": "h-margin-2025", "category": "business-rule", "question": "What was our gross margin percentage in 2025?", "expect": "answer",
+      "gold": "SELECT 100.0 * (SUM(l.LineTotal) - SUM(l.Quantity * p.UnitCost)) / SUM(l.LineTotal) FROM sales.Orders o JOIN sales.OrderLines l ON l.OrderId = o.OrderId JOIN catalog.Products p ON p.ProductId = l.ProductId WHERE o.Status NOT IN ('Cancelled', 'Returned') AND o.OrderDate >= '2025-01-01' AND o.OrderDate < '2026-01-01'" },
+    { "id": "h-return-rate-warehouse", "category": "ratios", "question": "What is the return rate for each warehouse?", "expect": "answer",
+      "gold": "SELECT w.Name, 100.0 * SUM(CASE WHEN o.Status = 'Returned' THEN 1 ELSE 0 END) / SUM(CASE WHEN o.Status IN ('Shipped', 'Delivered', 'Returned') THEN 1 ELSE 0 END) FROM sales.Orders o JOIN inventory.Warehouses w ON w.WarehouseId = o.WarehouseId GROUP BY w.Name",
+      "notes": "Return rate = returned / shipped (Shipped, Delivered or Returned) orders, per the glossary." },
+    { "id": "h-active-customers", "category": "business-rule", "question": "How many active customers do we have?", "expect": "answer",
+      "gold": "SELECT COUNT(DISTINCT o.CustomerId) FROM sales.Orders o WHERE o.Status <> 'Cancelled' AND o.OrderDate >= DATEADD(month, -12, GETDATE()) AND o.OrderDate < GETDATE()",
+      "notes": "Active = a non-cancelled order in the 12 months before today, per the glossary." },
+    { "id": "h-revenue-q2-2026", "category": "dates", "question": "What was revenue in the second quarter of 2026?", "expect": "answer",
+      "gold": "SELECT SUM(l.LineTotal) FROM sales.Orders o JOIN sales.OrderLines l ON l.OrderId = o.OrderId WHERE o.Status NOT IN ('Cancelled', 'Returned') AND o.OrderDate >= '2026-04-01' AND o.OrderDate < '2026-07-01'" },
+    { "id": "h-yoy-july", "category": "dates", "question": "By what percentage did revenue in July 2026 change compared with July 2025?", "expect": "answer",
+      "gold": "SELECT 100.0 * (SUM(CASE WHEN o.OrderDate >= '2026-07-01' AND o.OrderDate < '2026-08-01' THEN l.LineTotal ELSE 0 END) - SUM(CASE WHEN o.OrderDate >= '2025-07-01' AND o.OrderDate < '2025-08-01' THEN l.LineTotal ELSE 0 END)) / SUM(CASE WHEN o.OrderDate >= '2025-07-01' AND o.OrderDate < '2025-08-01' THEN l.LineTotal ELSE 0 END) FROM sales.Orders o JOIN sales.OrderLines l ON l.OrderId = o.OrderId WHERE o.Status NOT IN ('Cancelled', 'Returned')" },
+    { "id": "h-inventory-list-value", "category": "inventory", "question": "What is the total value of all our stock at list price?", "expect": "answer",
+      "gold": "SELECT SUM(s.QuantityOnHand * p.ListPrice) FROM inventory.Stock s JOIN catalog.Products p ON p.ProductId = s.ProductId" },
+    { "id": "h-out-of-stock-products", "category": "inventory", "question": "How many active products are out of stock in at least one warehouse?", "expect": "answer",
+      "gold": "SELECT COUNT(DISTINCT s.ProductId) FROM inventory.Stock s JOIN catalog.Products p ON p.ProductId = s.ProductId WHERE s.QuantityOnHand = 0 AND p.IsDiscontinued = 0" },
+    { "id": "h-amount-outstanding", "category": "payments", "question": "How much money is still outstanding on unpaid orders?", "expect": "answer",
+      "gold": "SELECT SUM(t.Due) FROM (SELECT o.OrderId, SUM(l.LineTotal) + o.ShippingFee AS Due FROM sales.Orders o JOIN sales.OrderLines l ON l.OrderId = o.OrderId WHERE o.Status <> 'Cancelled' AND NOT EXISTS (SELECT 1 FROM sales.Payments p WHERE p.OrderId = o.OrderId AND p.IsRefund = 0) GROUP BY o.OrderId, o.ShippingFee) t",
+      "notes": "Outstanding = unpaid, non-cancelled orders' line totals plus shipping, per the glossary." },
+    { "id": "h-orders-ytd", "category": "dates", "question": "How many orders have been placed so far this year?", "expect": "answer",
+      "gold": "SELECT COUNT(*) FROM sales.Orders WHERE OrderDate >= DATEFROMPARTS(YEAR(GETDATE()), 1, 1) AND OrderDate < GETDATE()" },
+    { "id": "h-fulfilment-hours", "category": "aggregation", "question": "On average, how many hours pass between an order being placed and it being shipped?", "expect": "answer",
+      "gold": "SELECT AVG(CAST(DATEDIFF(hour, OrderDate, ShippedDate) AS float)) FROM sales.Orders WHERE ShippedDate IS NOT NULL" },
+    { "id": "h-decline-advertising", "category": "decline", "question": "How much did we spend on advertising in 2025?", "expect": "decline" },
+    { "id": "h-decline-ratings", "category": "decline", "question": "Which product has the best customer rating?", "expect": "decline" }
+  ]
+}

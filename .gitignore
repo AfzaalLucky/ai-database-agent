@@ -1,0 +1,22 @@
+# Build output
+bin/
+obj/
+artifacts/
+TestResults/
+*.trx
+coverage*.xml
+
+# IDE / OS
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+.DS_Store
+Thumbs.db
+
+# Local configuration and secrets (use `dotnet user-secrets` instead)
+appsettings.*.local.json
+*.env
+.env*
+!.env.example

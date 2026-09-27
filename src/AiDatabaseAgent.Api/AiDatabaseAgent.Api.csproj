@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\AiDatabaseAgent.Core\AiDatabaseAgent.Core.csproj" />
+    <ProjectReference Include="..\AiDatabaseAgent.Infrastructure\AiDatabaseAgent.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+  </ItemGroup>
+
+  <!-- V4 business knowledge (single source of truth: /knowledge at the repository root). -->
+  <ItemGroup>
+    <None Include="..\..\knowledge\*.json" Link="knowledge\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
